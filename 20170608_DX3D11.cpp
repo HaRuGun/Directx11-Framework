@@ -5,12 +5,16 @@ IDXGISwapChain *swapChain;
 ID3D11Device *dev;
 ID3D11DeviceContext *devCon;
 ID3D11RenderTargetView *backBuffer;
+ID3D11InputLayout *pLayout;
+ID3D11VertexShader *pVS;
+ID3D11PixelShader *pPS;
+ID3D11Buffer *pVBuffer;
 
 void InitD3D(HWND hWnd);
 void RenderFrame();
 void CleanD3D();
-
-LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+void InitGraphics();
+void InitPipeLine();
 
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
@@ -26,7 +30,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	wc.hInstance = hInstance;
 	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 	// wc.hbrBackground = (HBRUSH)COLOR_WINDOW;
-	wc.lpszClassName = "WindowClass";
+	wc.lpszClassName = L"WindowClass";
 
 	RegisterClassEx(&wc);
 
@@ -34,7 +38,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
 	hWnd = CreateWindowEx(
-		NULL, "WindowClass", "Framework DX11", WS_OVERLAPPEDWINDOW,
+		NULL, L"WindowClass", L"Framework DX11", WS_OVERLAPPEDWINDOW,
 		100, 50, wr.right - wr.left, wr.bottom - wr.top,
 		NULL, NULL, hInstance, NULL);
 
@@ -78,6 +82,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 }
 
 
+//////////////////////////////////////////////////
+
+
 void InitD3D(HWND hWnd)
 {
 	// Direct3D Init
@@ -119,6 +126,9 @@ void InitD3D(HWND hWnd)
 	viewPort.Height = SCREEN_HEIGHT;
 
 	devCon->RSSetViewports(1, &viewPort);
+
+	InitPipeLine();
+	InitGraphics();
 }
 
 
@@ -127,7 +137,13 @@ void RenderFrame()
 	devCon->ClearRenderTargetView(backBuffer, D3DXCOLOR(0.4f, 0.6f, 0.8f, 1.0f));
 	// [START]
 
+	UINT stride = sizeof(VERTEX);
+	UINT offset = 0;
+	devCon->IASetVertexBuffers(0, 1, &pVBuffer, &stride, &offset);
 
+	devCon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	devCon->Draw(3, 0);
 
 	// [END]
 	swapChain->Present(0, 0);
@@ -138,8 +154,61 @@ void CleanD3D()
 {
 	swapChain->SetFullscreenState(FALSE, NULL);
 
+	pLayout->Release();
+	pVS->Release();
+	pPS->Release();
+	pVBuffer->Release();
 	swapChain->Release();
 	backBuffer->Release();
 	dev->Release();
 	devCon->Release();
+}
+
+
+void InitGraphics()
+{
+	VERTEX OurVertices[] =
+	{
+		{ 0.0f, 0.5f, 0.0f, D3DXCOLOR(1.0f, 0.0f, 0.0f, 1.0f) },
+		{ 0.45f, -0.5f, 0.0f, D3DXCOLOR(0.0f, 1.0f, 0.0f, 1.0f) },
+		{ -0.45f, -0.5f, 0.0f, D3DXCOLOR(0.0f, 0.0f, 1.0f, 1.0f) }
+	};
+
+	D3D11_BUFFER_DESC bd;
+	ZeroMemory(&bd, sizeof(bd));
+
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.ByteWidth = sizeof(VERTEX) * 3;
+	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+	dev->CreateBuffer(&bd, NULL, &pVBuffer);
+
+	D3D11_MAPPED_SUBRESOURCE ms;
+	devCon->Map(pVBuffer, NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
+	memcpy(ms.pData, OurVertices, sizeof(OurVertices));
+	devCon->Unmap(pVBuffer, NULL);
+}
+
+
+void InitPipeLine()
+{
+	ID3D10Blob *VS, *PS;
+	D3DX11CompileFromFile(L"Shaders.shader", 0, 0, "VShader", "vs_4_0", 0, 0, 0, &VS, 0, 0);
+	D3DX11CompileFromFile(L"Shaders.shader", 0, 0, "PShader", "ps_4_0", 0, 0, 0, &PS, 0, 0);
+
+	dev->CreateVertexShader(VS->GetBufferPointer(), VS->GetBufferSize(), NULL, &pVS);
+	dev->CreatePixelShader(PS->GetBufferPointer(), PS->GetBufferSize(), NULL, &pPS);
+
+	devCon->VSSetShader(pVS, 0, 0);
+	devCon->PSSetShader(pPS, 0, 0);
+
+	D3D11_INPUT_ELEMENT_DESC ied[] =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+	};
+
+	dev->CreateInputLayout(ied, 2, VS->GetBufferPointer(), VS->GetBufferSize(), &pLayout);
+	devCon->IASetInputLayout(pLayout);
 }
